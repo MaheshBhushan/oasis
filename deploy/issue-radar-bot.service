@@ -1,0 +1,15 @@
+[Unit]
+Description=issue-radar Discord bot (drains the events queue)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/issue-radar
+EnvironmentFile=%h/issue-radar/.env
+ExecStart=/usr/bin/node src/bot.ts
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=issue-radar poller (GitHub -> events queue)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/issue-radar
+EnvironmentFile=%h/issue-radar/.env
+ExecStart=/usr/bin/node src/poller.ts
+# The poller gates itself when the GitHub rate limit runs low (see
+# shouldSkipForBackoff); the timer interval stays fixed.
