@@ -1,0 +1,43 @@
+/** Single-channel deployment: one DISCORD_CHANNEL_ID for every watched repo. */
+export interface Config {
+  dbPath: string;
+  githubToken: string;
+  githubHandle: string;
+  discordToken: string;
+  discordChannelId: string;
+  /** Label changes only produce events for labels in this set. */
+  watchedLabels: string[];
+  staleDays: number;
+  /** Batch into a single digest embed once a cycle exceeds this many events. */
+  digestThreshold: number;
+  /** Poller backs off (doubling its interval) below this many remaining calls. */
+  rateLimitFloor: number;
+  /** Prefix on actionable alerts. `<@id>` for a DM-style ping, or `@here`. */
+  pingTarget: string;
+}
+
+function req(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`missing required env var ${name}`);
+  return v;
+}
+
+export function loadConfig(): Config {
+  return {
+    dbPath: process.env.RADAR_DB ?? "radar.db",
+    githubToken: req("GITHUB_TOKEN"),
+    githubHandle: process.env.GITHUB_HANDLE ?? "MaheshBhushan",
+    discordToken: req("DISCORD_TOKEN"),
+    discordChannelId: req("DISCORD_CHANNEL_ID"),
+    watchedLabels: (process.env.RADAR_LABELS ?? "bug,good first issue")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+    staleDays: Number(process.env.RADAR_STALE_DAYS ?? 30),
+    digestThreshold: Number(process.env.RADAR_DIGEST_THRESHOLD ?? 5),
+    rateLimitFloor: Number(process.env.RADAR_RATE_FLOOR ?? 500),
+    pingTarget: process.env.RADAR_PING
+      ? `<@${process.env.RADAR_PING}>`
+      : "@here",
+  };
+}
