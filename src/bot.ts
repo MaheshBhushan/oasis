@@ -195,7 +195,18 @@ client.on(Events.InteractionCreate, async (i) => {
 
 if (process.argv.includes("--register")) {
   const rest = new REST().setToken(cfg.discordToken);
-  const appId = Buffer.from(cfg.discordToken.split(".")[0]!, "base64").toString();
+  // The first token segment is the base64 application id, but that has not
+  // always held across token formats — DISCORD_APP_ID wins when set.
+  const appId =
+    process.env.DISCORD_APP_ID ||
+    Buffer.from(cfg.discordToken.split(".")[0]!, "base64").toString();
+  if (!/^\d{17,20}$/.test(appId)) {
+    console.error(
+      `Could not derive the application id from the token (got "${appId}").\n` +
+        "Set DISCORD_APP_ID in .env — it's the Application ID on your app's General Information page.",
+    );
+    process.exit(1);
+  }
   await rest.put(Routes.applicationCommands(appId), { body: commands });
   console.log(`[bot] registered ${commands.length} commands`);
   process.exit(0);
