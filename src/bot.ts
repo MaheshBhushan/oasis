@@ -172,7 +172,29 @@ client.once(Events.ClientReady, async (c) => {
     }
   };
   await tick();
-  setInterval(tick, 30_000);
+
+  // Resuming from suspend can leave the websocket open but dead: the process is
+  // healthy, so Restart=always never fires, and the bot sits there looking
+  // online while delivering nothing. discord.js reconnects on its own within a
+  // few seconds, so only a sustained outage counts. Exiting hands the problem
+  // to systemd, which knows how to start us cleanly.
+  let unhealthy = 0;
+  const HEALTH_STRIKES = 4; // ~2 minutes at the 30s tick
+
+  setInterval(async () => {
+    if (client.isReady()) {
+      unhealthy = 0;
+      await tick();
+      return;
+    }
+    if (++unhealthy >= HEALTH_STRIKES) {
+      console.error(
+        `[bot] gateway not ready for ${(HEALTH_STRIKES * 30) / 60} minutes; exiting for restart`,
+      );
+      process.exit(1);
+    }
+    console.warn(`[bot] gateway not ready (${unhealthy}/${HEALTH_STRIKES})`);
+  }, 30_000);
 });
 
 client.on(Events.InteractionCreate, async (i) => {
