@@ -163,9 +163,12 @@ export async function searchPullsMentioning(
 }
 
 /**
- * The most recently updated issues, newest first. One page, no pagination —
- * this answers "what's happening here right now", which is what /watch shows
- * you on registration instead of seeding thousands of rows.
+ * The most recently *opened* issues, newest first.
+ *
+ * Sorted by creation, not update. `sort=updated` answers "what did people touch
+ * lately", which on a busy repo is dominated by old threads getting comments —
+ * openclaw returned issues created 13 to 199 hours ago while genuinely new ones
+ * sat an hour old and unlisted. "Latest issues" means newly posted.
  */
 export async function listRecentIssues(
   gh: Client,
@@ -177,7 +180,7 @@ export async function listRecentIssues(
     owner,
     repo,
     state: "all",
-    sort: "updated",
+    sort: "created",
     direction: "desc",
     // Always take a full page. The endpoint mixes PRs in, and on a busy repo
     // the recent window is overwhelmingly PRs — openclaw's newest 20 items
