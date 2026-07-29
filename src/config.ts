@@ -28,6 +28,8 @@ export interface Config {
   onlyLabelled: boolean;
   /** Skip issues that already have a pull request attached. */
   onlyUnclaimed: boolean;
+  /** Max issue timelines resolved per repo per cycle. Bounds quota spend. */
+  linkBudget: number;
 }
 
 function req(name: string): string {
@@ -56,5 +58,6 @@ export function loadConfig(): Config {
       : "@here",
     onlyLabelled: process.env.RADAR_ONLY_LABELLED === "true",
     onlyUnclaimed: process.env.RADAR_ONLY_UNCLAIMED === "true",
+    linkBudget: Number(process.env.RADAR_LINK_BUDGET ?? 60),
   };
 }

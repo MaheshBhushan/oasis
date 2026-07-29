@@ -59,6 +59,8 @@ export async function pollRepo(
   const issues = result.items.filter((i: RawIssue) => !isPullRequest(i));
   let changed = 0;
   let maxUpdated = repo.last_sync;
+  // Timeline calls are the expensive part of a cycle; cap them per repo.
+  let linkBudget = cfg.linkBudget;
 
   for (const raw of issues) {
     const stored = getIssue(db, repo.id, raw.number);
@@ -79,12 +81,18 @@ export async function pollRepo(
     });
 
     if (!maxUpdated || raw.updated_at > maxUpdated) maxUpdated = raw.updated_at;
-    if (diffs.length === 0) continue;
-    changed++;
-    if (silent) continue;
 
-    // Read the thread only when there is something to read, and only for
-    // issues that actually changed -- one extra call per changed issue.
+    // GitHub only returns issues it considers changed, but "changed" covers far
+    // more than our diff rules: a PR being attached, or a comment landing,
+    // moves updated_at without touching state or labels. Keying link
+    // resolution off our own diffs meant an issue that merely *gained a PR*
+    // was skipped entirely -- so a race warning could never fire on an issue
+    // that was already open when you claimed it.
+    const moved = !stored || raw.updated_at !== stored.updated_at;
+    if (diffs.length) changed++;
+    if (silent || !moved) continue;
+
+    // Read the thread only when there is something to read.
     if ((raw.comments ?? 0) > 0) {
       setHumanComments(
         db,
@@ -98,15 +106,24 @@ export async function pollRepo(
 
     // Filters apply to what gets announced, not what gets stored: the row is
     // already written above, so /status and /issue still see everything.
-    if (cfg.onlyLabelled) {
+    // A claimed issue always passes -- being outraced on one is the single
+    // thing you must not miss, whatever the filters say.
+    const claimed = Boolean(stored?.claimed_by);
+    let announce = true;
+    if (!claimed && cfg.onlyLabelled) {
       const labels = labelNames(raw).map((l) => l.toLowerCase());
-      if (!labels.some((l) => cfg.watchedLabels.includes(l))) continue;
+      if (!labels.some((l) => cfg.watchedLabels.includes(l))) announce = false;
     }
-    if (cfg.onlyUnclaimed && getLinks(db, repo.id, raw.number).length > 0) continue;
+    if (!claimed && cfg.onlyUnclaimed && getLinks(db, repo.id, raw.number).length > 0) {
+      announce = false;
+    }
 
-    emitIssueEvents(db, repo.id, raw.number, diffs);
+    if (announce && diffs.length) emitIssueEvents(db, repo.id, raw.number, diffs);
 
-    if (diffs.some(touchesState)) {
+    // Resolve links on any real activity, not just state changes. Budgeted so
+    // one enormous cycle cannot exhaust the hourly quota on timeline calls.
+    if (linkBudget > 0 && (claimed || announce || diffs.some(touchesState))) {
+      linkBudget--;
       const before = getLinks(db, repo.id, raw.number);
       const after = await resolveLinks(
         gh,
