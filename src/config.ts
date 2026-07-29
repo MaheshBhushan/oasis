@@ -20,6 +20,14 @@ export interface Config {
   rateLimitFloor: number;
   /** Prefix on actionable alerts. `<@id>` for a DM-style ping, or `@here`. */
   pingTarget: string;
+  /**
+   * Only announce issues carrying one of `watchedLabels`. On a repo the size of
+   * openclaw this is the difference between a readable feed and a firehose —
+   * everything else still lands in the DB for /status and /issue.
+   */
+  onlyLabelled: boolean;
+  /** Skip issues that already have a pull request attached. */
+  onlyUnclaimed: boolean;
 }
 
 function req(name: string): string {
@@ -46,5 +54,7 @@ export function loadConfig(): Config {
     pingTarget: process.env.RADAR_PING
       ? `<@${process.env.RADAR_PING}>`
       : "@here",
+    onlyLabelled: process.env.RADAR_ONLY_LABELLED === "true",
+    onlyUnclaimed: process.env.RADAR_ONLY_UNCLAIMED === "true",
   };
 }

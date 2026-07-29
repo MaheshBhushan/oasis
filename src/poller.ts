@@ -96,6 +96,14 @@ export async function pollRepo(
       setHumanComments(db, repo.id, raw.number, 0);
     }
 
+    // Filters apply to what gets announced, not what gets stored: the row is
+    // already written above, so /status and /issue still see everything.
+    if (cfg.onlyLabelled) {
+      const labels = labelNames(raw).map((l) => l.toLowerCase());
+      if (!labels.some((l) => cfg.watchedLabels.includes(l))) continue;
+    }
+    if (cfg.onlyUnclaimed && getLinks(db, repo.id, raw.number).length > 0) continue;
+
     emitIssueEvents(db, repo.id, raw.number, diffs);
 
     if (diffs.some(touchesState)) {

@@ -15,7 +15,13 @@ import { diffIssue, touchesState } from "./diff.ts";
 import { emitIssueEvents, emitLinkEvents, sweepStale } from "./events.ts";
 import { parseClosingRefs, resolveLinks } from "./links.ts";
 import { drain } from "./delivery.ts";
-import { age, contention } from "./render.ts";
+import {
+  age,
+  contention,
+  digestEmbed,
+  digestLine,
+  rankDigest,
+} from "./render.ts";
 import { splitSlug } from "./slug.ts";
 import { isPullRequest, type RawIssue } from "./github.ts";
 import type { Config } from "./config.ts";
@@ -550,6 +556,62 @@ describe("contention status", () => {
       contention(stored({ claimed_by: "MaheshBhushan" }), []),
       "no replies · claimed by MaheshBhushan",
     );
+  });
+});
+
+describe("digest grouping", () => {
+  const row = (
+    number: number,
+    over: Partial<IssueRow> = {},
+    links: LinkRow[] = [],
+    types: string[] = ["issue_opened"],
+  ) => ({
+    repo: { id: 1, owner: "o", name: "r" } as never,
+    issue: stored({ number, ...over }),
+    links,
+    types: new Set(types),
+  });
+
+  test("three events on one issue collapse to one line", () => {
+    // The exact shape that produced #115758 three times in the channel.
+    const r = row(115758, {}, [], [
+      "issue_opened",
+      "pr_opened_for_issue",
+      "pr_closed_unmerged",
+    ]);
+    const line = digestLine(r);
+    assert.equal(line.split("\n").length, 2); // heading + detail, not 3 entries
+    assert.equal((line.match(/#115758/g) ?? []).length, 1);
+  });
+
+  test("title counts issues, not events", () => {
+    const embed = digestEmbed([row(1), row(2), row(3)]).toJSON();
+    assert.match(embed.title!, /^3 issues moved/);
+  });
+
+  test("issues with no PR are surfaced in the title", () => {
+    const withPr = row(2, {}, [
+      { pr_number: 9, merged: 0, pr_state: "open", author: "x" } as LinkRow,
+    ]);
+    const embed = digestEmbed([row(1), withPr]).toJSON();
+    assert.match(embed.title!, /1 with no PR yet/);
+  });
+
+  test("untouched issues rank above ones already taken", () => {
+    const taken = row(1, {}, [
+      { pr_number: 9, merged: 0, pr_state: "open", author: "x" } as LinkRow,
+    ]);
+    const discussed = row(2, { comments: 4, human_comments: 4 });
+    const free = row(3);
+    const closed = row(4, { state: "closed" });
+    const order = [taken, closed, discussed, free]
+      .sort(rankDigest)
+      .map((r) => r.issue.number);
+    assert.deepEqual(order, [3, 2, 1, 4]);
+  });
+
+  test("closed issues are struck through", () => {
+    assert.match(digestLine(row(5, { state: "closed" })), /~~/);
   });
 });
 

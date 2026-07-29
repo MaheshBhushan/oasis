@@ -137,15 +137,59 @@ export function prLine(l: LinkRow): string {
   return `#${l.pr_number} — ${status} · ${who}`;
 }
 
+export interface DigestRow {
+  repo: RepoRow;
+  issue: IssueRow;
+  links: LinkRow[];
+  types: Set<string>;
+}
+
+/**
+ * One line per issue, not per event.
+ *
+ * The old digest listed every event separately, so a single issue that was
+ * opened and then picked up by two PRs took three lines and read like three
+ * different things happening. Merging by issue makes the list as long as the
+ * number of things that actually moved.
+ */
+export function digestLine(row: DigestRow): string {
+  const { issue, links } = row;
+  const closed = row.types.has("issue_closed") || issue.state === "closed";
+  const title = issue.title.slice(0, 58);
+  const head = `[#${issue.number}](${issue.html_url}) ${closed ? `~~${title}~~` : title}`;
+  return `${head}\n ${age(issue.created_at)} old · ${contention(issue, links)}`;
+}
+
+/**
+ * Free issues first — that is the whole reason to read this. An untouched issue
+ * is a chance; one that already has a PR is a notification.
+ */
+export function rankDigest(a: DigestRow, b: DigestRow): number {
+  const score = (r: DigestRow) => {
+    if (r.issue.state === "closed") return 3;
+    if (r.links.length) return 2;
+    if ((r.issue.human_comments ?? r.issue.comments) > 0) return 1;
+    return 0; // untouched
+  };
+  const d = score(a) - score(b);
+  return d !== 0 ? d : Date.parse(b.issue.created_at) - Date.parse(a.issue.created_at);
+}
+
 /** More than `digestThreshold` events in one cycle collapse into this. */
-export function digestEmbed(
-  lines: string[],
-  cycleCount: number,
-): EmbedBuilder {
+export function digestEmbed(rows: DigestRow[]): EmbedBuilder {
+  const sorted = [...rows].sort(rankDigest);
+  const free = sorted.filter(
+    (r) => r.issue.state === "open" && !r.links.length,
+  ).length;
+
+  const body = sorted.map(digestLine).join("\n");
   return new EmbedBuilder()
     .setColor(COLOR.open)
-    .setTitle(`${cycleCount} updates this cycle`)
-    .setDescription(lines.join("\n").slice(0, 4000));
+    .setTitle(
+      `${rows.length} issue${rows.length === 1 ? "" : "s"} moved` +
+        (free ? ` · ${free} with no PR yet` : ""),
+    )
+    .setDescription(body.slice(0, 4000));
 }
 
 /** race_warning and pr_merged post fresh with a ping — they're actionable. */

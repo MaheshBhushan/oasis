@@ -13,7 +13,7 @@ import {
   digestEmbed,
   issueEmbed,
   releaseEmbed,
-  summarize,
+  type DigestRow,
 } from "./render.ts";
 import type { EventRow, IssueRow, RepoRow } from "./types.ts";
 
@@ -83,16 +83,33 @@ export async function drain(
     }
   }
 
-  if (quiet.length > cfg.digestThreshold) {
-    // Too many to read one by one; collapse into a single digest.
-    const lines: string[] = [];
-    for (const ev of quiet) {
-      const repo = repos.get(ev.repo_id);
-      const issue = repo && getIssue(db, ev.repo_id, ev.issue_number);
-      if (repo && issue) lines.push(summarize(ev, issue, repo));
+  // Group by issue up front: several events on one issue are one thing that
+  // happened, not several, and the digest counts issues rather than events.
+  const grouped = new Map<string, DigestRow>();
+  for (const ev of quiet) {
+    const repo = repos.get(ev.repo_id);
+    const issue = repo && getIssue(db, ev.repo_id, ev.issue_number);
+    if (!repo || !issue) {
+      done.push(ev.id);
+      continue;
     }
+    const key = `${ev.repo_id}:${ev.issue_number}`;
+    const row = grouped.get(key);
+    if (row) row.types.add(ev.type);
+    else {
+      grouped.set(key, {
+        repo,
+        issue,
+        links: getLinks(db, ev.repo_id, ev.issue_number),
+        types: new Set([ev.type]),
+      });
+    }
+  }
+
+  if (grouped.size > cfg.digestThreshold) {
+    // Too many to read one by one; collapse into a single ranked digest.
     try {
-      await channel.send({ embeds: [digestEmbed(lines, quiet.length)] });
+      await channel.send({ embeds: [digestEmbed([...grouped.values()])] });
       done.push(...quiet.map((e) => e.id));
     } catch (e) {
       console.error("[deliver] digest failed:", e);
