@@ -1,4 +1,4 @@
-<h1 align="center">issue-radar</h1>
+<h1 align="center">OASIS</h1>
 <p align="center">A Discord bot that watches GitHub repos you don't own, so you hear about an issue before someone else fixes it.</p>
 
 <p align="center">
@@ -39,8 +39,8 @@ Split so a Discord outage cannot lose events — they sit in the queue and drain
 Requires **Node 26+**. It runs the TypeScript directly via native type stripping and uses the built-in `node:sqlite`, so there is no build step and no native dependency to compile.
 
 ```bash
-git clone https://github.com/MaheshBhushan/githubrepo_tracker.git issue-radar
-cd issue-radar
+git clone https://github.com/MaheshBhushan/oasis.git oasis
+cd oasis
 npm install
 cp .env.example .env      # fill in tokens, see Configuration
 npm run register          # publish slash commands (once)
