@@ -8,7 +8,13 @@ import {
   pendingEvents,
   setMessageId,
 } from "./db.ts";
-import { alertEmbed, digestEmbed, issueEmbed, summarize } from "./render.ts";
+import {
+  alertEmbed,
+  digestEmbed,
+  issueEmbed,
+  releaseEmbed,
+  summarize,
+} from "./render.ts";
 import type { EventRow, IssueRow, RepoRow } from "./types.ts";
 
 /** Events that always post fresh with a ping instead of editing in place. */
@@ -35,9 +41,27 @@ export async function drain(
     ).map((r) => [r.id, r]),
   );
 
-  const alerts = events.filter((e) => ALERTS.has(e.type));
-  const quiet = events.filter((e) => !ALERTS.has(e.type));
   const done: number[] = [];
+
+  // Releases aren't attached to an issue (issue_number is 0), so they bypass
+  // the per-issue embed logic entirely and post standalone.
+  for (const ev of events.filter((e) => e.type === "release_published")) {
+    const repo = repos.get(ev.repo_id);
+    if (!repo) {
+      done.push(ev.id);
+      continue;
+    }
+    try {
+      await channel.send({ embeds: [releaseEmbed(repo, ev)] });
+      done.push(ev.id);
+    } catch (e) {
+      console.error(`[deliver] release ${ev.id} failed:`, e);
+    }
+  }
+
+  const rest = events.filter((e) => e.type !== "release_published");
+  const alerts = rest.filter((e) => ALERTS.has(e.type));
+  const quiet = rest.filter((e) => !ALERTS.has(e.type));
 
   // Alerts first — they are the actionable ones and must not be buried.
   for (const ev of alerts) {

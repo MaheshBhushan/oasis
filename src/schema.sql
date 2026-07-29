@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS repos (
   last_sync TEXT,
   -- ETag from the last issues-list response, replayed as If-None-Match.
   etag      TEXT,
+  -- Tag of the newest release we have already announced.
+  last_release TEXT,
   added_at  TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (owner, name)
 );

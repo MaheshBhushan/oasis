@@ -118,6 +118,41 @@ export function alertEmbed(
     .setAuthor({ name: slug });
 }
 
+/** Releases aren't tied to an issue, so they get their own standalone embed. */
+export function releaseEmbed(repo: RepoRow, ev: EventRow): EmbedBuilder {
+  const p = JSON.parse(ev.payload_json) as Record<string, unknown>;
+  const e = new EmbedBuilder()
+    .setColor(p.prerelease ? COLOR.stale : COLOR.open)
+    .setTitle(
+      `${repo.owner}/${repo.name} ${p.tag}${p.prerelease ? " (pre-release)" : ""}`,
+    )
+    .setURL(String(p.url))
+    .setAuthor({ name: "new release" });
+  if (p.name && p.name !== p.tag) e.setDescription(String(p.name));
+  if (p.body) {
+    e.addFields({ name: "Notes", value: String(p.body).slice(0, 1000) });
+  }
+  if (p.author) e.setFooter({ text: `released by ${p.author}` });
+  return e;
+}
+
+/** Compact list of an issue for the /watch summary. */
+export function recentIssuesEmbed(
+  repo: RepoRow,
+  issues: Array<{ number: number; title: string; state: string; html_url: string; updated_at: string }>,
+): EmbedBuilder {
+  const lines = issues.map((i) => {
+    const days = Math.floor((Date.now() - Date.parse(i.updated_at)) / 86_400_000);
+    const when = days === 0 ? "today" : `${days}d ago`;
+    const mark = i.state === "closed" ? "~~" : "";
+    return `${mark}[#${i.number} ${i.title.slice(0, 70)}](${i.html_url})${mark} · ${when}`;
+  });
+  return new EmbedBuilder()
+    .setColor(COLOR.open)
+    .setTitle(`${repo.owner}/${repo.name} — latest issues`)
+    .setDescription(lines.join("\n") || "No issues found.");
+}
+
 export function summarize(ev: EventRow, issue: IssueRow, repo: RepoRow): string {
   const p = JSON.parse(ev.payload_json) as Record<string, unknown>;
   const ref = `${repo.owner}/${repo.name}#${issue.number}`;
@@ -141,5 +176,7 @@ export function summarize(ev: EventRow, issue: IssueRow, repo: RepoRow): string 
       return `${ref} RACE: ${p.author} opened PR #${p.pr}`;
     case "stale":
       return `${ref} stale (${p.days}d quiet)`;
+    case "release_published":
+      return `${repo.owner}/${repo.name} released ${p.tag}`;
   }
 }

@@ -13,7 +13,8 @@ export type EventType =
   | "pr_merged"
   | "pr_closed_unmerged"
   | "race_warning"
-  | "stale";
+  | "stale"
+  | "release_published";
 
 export interface RepoRow {
   id: number;
@@ -21,6 +22,7 @@ export interface RepoRow {
   name: string;
   last_sync: string | null;
   etag: string | null;
+  last_release: string | null;
   added_at: string;
 }
 

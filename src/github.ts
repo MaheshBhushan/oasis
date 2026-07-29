@@ -162,6 +162,65 @@ export async function searchPullsMentioning(
   }
 }
 
+/**
+ * The most recently updated issues, newest first. One page, no pagination —
+ * this answers "what's happening here right now", which is what /watch shows
+ * you on registration instead of seeding thousands of rows.
+ */
+export async function listRecentIssues(
+  gh: Client,
+  owner: string,
+  repo: string,
+  count: number,
+): Promise<RawIssue[]> {
+  const { data } = await gh.issues.listForRepo({
+    owner,
+    repo,
+    state: "all",
+    sort: "updated",
+    direction: "desc",
+    // Always take a full page. The endpoint mixes PRs in, and on a busy repo
+    // the recent window is overwhelmingly PRs — openclaw's newest 20 items
+    // yielded only 2 issues. A full page costs the same single request.
+    per_page: 100,
+  });
+  return (data as unknown as RawIssue[]).filter((i) => !isPullRequest(i)).slice(0, count);
+}
+
+export interface ReleaseInfo {
+  tag: string;
+  name: string | null;
+  url: string;
+  author: string | null;
+  publishedAt: string | null;
+  prerelease: boolean;
+  body: string | null;
+}
+
+/** Newest published release, or null if the repo has never cut one. */
+export async function latestRelease(
+  gh: Client,
+  owner: string,
+  repo: string,
+): Promise<ReleaseInfo | null> {
+  try {
+    const { data } = await gh.repos.listReleases({ owner, repo, per_page: 1 });
+    const r = data[0];
+    if (!r) return null;
+    return {
+      tag: r.tag_name,
+      name: r.name ?? null,
+      url: r.html_url,
+      author: r.author?.login ?? null,
+      publishedAt: r.published_at ?? null,
+      prerelease: r.prerelease,
+      body: r.body ?? null,
+    };
+  } catch {
+    return null; // releases disabled, or none published
+  }
+}
+
 /** Remaining core-API calls, so the poller can decide to widen its interval. */
 export async function rateRemaining(gh: Client): Promise<number> {
   const { data } = await gh.rateLimit.get();

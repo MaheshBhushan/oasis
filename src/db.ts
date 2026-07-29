@@ -23,7 +23,28 @@ export function openDb(path: string): DatabaseSync {
   db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(readFileSync(join(here, "schema.sql"), "utf8"));
+  migrate(db);
   return db;
+}
+
+/** Additive columns for databases created before they existed. */
+function migrate(db: DatabaseSync): void {
+  const cols = new Set(
+    (db.prepare("PRAGMA table_info(repos)").all() as unknown as Array<{
+      name: string;
+    }>).map((c) => c.name),
+  );
+  if (!cols.has("last_release")) {
+    db.exec("ALTER TABLE repos ADD COLUMN last_release TEXT");
+  }
+}
+
+export function setLastRelease(
+  db: DatabaseSync,
+  repoId: number,
+  tag: string,
+): void {
+  db.prepare("UPDATE repos SET last_release = ? WHERE id = ?").run(tag, repoId);
 }
 
 /* ---------------------------------------------------------------- repos --- */

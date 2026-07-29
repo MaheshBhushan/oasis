@@ -20,18 +20,27 @@ import {
   openDb,
   removeRepo,
   setSyncState,
+  upsertIssue,
 } from "./db.ts";
 import { drain } from "./delivery.ts";
-import { makeClient, repoExists } from "./github.ts";
-import { pollRepo } from "./poller.ts";
-import { issueEmbed, prLine } from "./render.ts";
+import {
+  labelNames,
+  listRecentIssues,
+  makeClient,
+  repoExists,
+} from "./github.ts";
+import { checkRelease } from "./poller.ts";
+import { issueEmbed, prLine, recentIssuesEmbed } from "./render.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { splitSlug } from "./slug.ts";
+
+/** How many recent issues /watch echoes back. */
+const RECENT_COUNT = 5;
 
 export const commands = [
   new SlashCommandBuilder()
     .setName("watch")
-    .setDescription("Start tracking a repo (silent backfill, then polled)")
+    .setDescription("Track a repo: new issues, PRs and releases as they happen")
     .addStringOption((o) =>
       o.setName("repo").setDescription("owner/repo").setRequired(true),
     ),
@@ -94,40 +103,36 @@ async function onWatch(i: ChatInputCommandInteraction, db: DatabaseSync, cfg: Co
 
   const repo = addRepo(db, parts[0], parts[1]);
 
-  // Seed the cursor to a bounded window. openclaw/openclaw alone has ~6k *open*
-  // issues and PRs; full history is hundreds of pages and well past Discord's
-  // 15 minute interaction deadline, which is exactly how this hung the first
-  // time. Dormant issues are not what you race anyone for.
-  const since = new Date(
-    Date.now() - cfg.backfillDays * 86_400_000,
-  ).toISOString();
-  setSyncState(db, repo.id, since, null);
+  // No historical seeding. Start the cursor at now, so from this moment on you
+  // hear about anything that changes -- and show the latest few issues straight
+  // away so the command answers with something useful instead of a wait. A
+  // full backfill of a large repo is thousands of rows nobody reads.
+  setSyncState(db, repo.id, new Date().toISOString(), null);
 
-  // Answer now. The backfill runs detached and reports into the channel when
-  // it lands -- an interaction token cannot be held open for minutes.
-  await i.editReply(
-    `Watching \`${parts[0]}/${parts[1]}\` — seeding the last ${cfg.backfillDays} days in the background. ` +
-      "Nothing will be announced for the backfill itself.",
-  );
+  const recent = await listRecentIssues(gh, parts[0], parts[1], RECENT_COUNT);
+  for (const raw of recent) {
+    upsertIssue(db, {
+      repo_id: repo.id,
+      number: raw.number,
+      title: raw.title,
+      state: raw.state,
+      state_reason: raw.state_reason ?? null,
+      labels_json: JSON.stringify(labelNames(raw)),
+      author: raw.user?.login ?? null,
+      html_url: raw.html_url,
+      created_at: raw.created_at,
+      updated_at: raw.updated_at,
+    });
+  }
 
-  void (async () => {
-    const started = Date.now();
-    try {
-      const report = await pollRepo(gh, db, cfg, { ...repo, last_sync: since }, true);
-      const secs = Math.round((Date.now() - started) / 1000);
-      await i.followUp(
-        `\`${parts[0]}/${parts[1]}\`: seeded ${report.scanned} issues in ${secs}s. Watching from here.`,
-      );
-    } catch (e) {
-      console.error(`[watch] backfill of ${slug} failed:`, e);
-      // Leaving a half-seeded row behind would make the retry answer
-      // "Already watching" and never backfill at all.
-      removeRepo(db, parts[0], parts[1]);
-      await i
-        .followUp(`Backfill of \`${slug}\` failed, so it is not being watched. Try again.`)
-        .catch(() => {});
-    }
-  })();
+  // Record the current release so the next new one is news, not the current one.
+  await checkRelease(gh, db, cfg, { ...repo, last_release: null });
+
+  const fresh = getRepo(db, parts[0], parts[1])!;
+  return i.editReply({
+    content: `Now watching \`${parts[0]}/${parts[1]}\`. You'll get new issues, closes, PRs and releases as they happen.`,
+    embeds: [recentIssuesEmbed(fresh, recent)],
+  });
 }
 
 async function onStatus(i: ChatInputCommandInteraction, db: DatabaseSync) {

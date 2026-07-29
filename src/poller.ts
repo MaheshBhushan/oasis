@@ -6,6 +6,8 @@ import {
   getLinks,
   listRepos,
   openDb,
+  queueEvent,
+  setLastRelease,
   setSyncState,
   upsertIssue,
 } from "./db.ts";
@@ -14,6 +16,7 @@ import { emitIssueEvents, emitLinkEvents, sweepStale } from "./events.ts";
 import {
   isPullRequest,
   labelNames,
+  latestRelease,
   listIssues,
   makeClient,
   NOT_MODIFIED,
@@ -97,7 +100,35 @@ export async function pollRepo(
   // Cursor comes from the data, never from wall-clock: anything updated between
   // the request and this write would otherwise be skipped forever.
   setSyncState(db, repo.id, maxUpdated, result.etag);
+  if (!silent) await checkRelease(gh, db, cfg, repo);
   return { repo: slug, skipped304: false, scanned: issues.length, changed };
+}
+
+/**
+ * Announce a new release once. last_release holds the tag we already posted, so
+ * a repo that cuts nothing new stays silent.
+ */
+export async function checkRelease(
+  gh: Client,
+  db: DatabaseSync,
+  _cfg: Config,
+  repo: RepoRow,
+): Promise<void> {
+  const rel = await latestRelease(gh, repo.owner, repo.name);
+  if (!rel || rel.tag === repo.last_release) return;
+
+  // First sighting on a repo we just started watching is not news.
+  if (repo.last_release !== null) {
+    queueEvent(db, repo.id, 0, "release_published", {
+      tag: rel.tag,
+      name: rel.name,
+      url: rel.url,
+      author: rel.author,
+      prerelease: rel.prerelease,
+      body: rel.body?.slice(0, 600) ?? null,
+    });
+  }
+  setLastRelease(db, repo.id, rel.tag);
 }
 
 export async function runCycle(db: DatabaseSync, cfg: Config): Promise<CycleReport[]> {
