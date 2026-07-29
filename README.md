@@ -1,6 +1,24 @@
 <h1 align="center">issue-radar</h1>
 <p align="center">A Discord bot that watches GitHub repos you don't own, so you hear about an issue before someone else fixes it.</p>
 
+<p align="center">
+  <img alt="Node 26+" src="https://img.shields.io/badge/node-%E2%89%A526-5FA04E?logo=node.js&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white">
+  <img alt="discord.js 14" src="https://img.shields.io/badge/discord.js-14-5865F2?logo=discord&logoColor=white">
+  <img alt="SQLite via node:sqlite" src="https://img.shields.io/badge/SQLite-node%3Asqlite-003B57?logo=sqlite&logoColor=white">
+  <img alt="No build step" src="https://img.shields.io/badge/build-none-lightgrey">
+  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue">
+</p>
+
+<p align="center">
+  <a href="#what-it-does">What</a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="#configuration">Config</a> ·
+  <a href="#deployment">Deploy</a> ·
+  <a href="#api-behaviour-worth-knowing">Gotchas</a>
+</p>
+
 <!-- HERO: replace with a GIF of a race_warning landing in the channel -->
 
 ## What it does
