@@ -37,6 +37,30 @@ function migrate(db: DatabaseSync): void {
   if (!cols.has("last_release")) {
     db.exec("ALTER TABLE repos ADD COLUMN last_release TEXT");
   }
+
+  const icols = new Set(
+    (db.prepare("PRAGMA table_info(issues)").all() as unknown as Array<{
+      name: string;
+    }>).map((c) => c.name),
+  );
+  if (!icols.has("comments")) {
+    db.exec("ALTER TABLE issues ADD COLUMN comments INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!icols.has("human_comments")) {
+    db.exec("ALTER TABLE issues ADD COLUMN human_comments INTEGER");
+  }
+}
+
+/** Cached count of non-bot comments; null until the thread has been read. */
+export function setHumanComments(
+  db: DatabaseSync,
+  repoId: number,
+  number: number,
+  count: number,
+): void {
+  db.prepare(
+    "UPDATE issues SET human_comments = ? WHERE repo_id = ? AND number = ?",
+  ).run(count, repoId, number);
 }
 
 export function setLastRelease(
@@ -116,8 +140,8 @@ export function upsertIssue(db: DatabaseSync, row: IssueUpsert): void {
   db.prepare(
     `INSERT INTO issues
        (repo_id, number, title, state, state_reason, labels_json, author,
-        html_url, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        html_url, created_at, updated_at, comments)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (repo_id, number) DO UPDATE SET
        title        = excluded.title,
        state        = excluded.state,
@@ -125,7 +149,8 @@ export function upsertIssue(db: DatabaseSync, row: IssueUpsert): void {
        labels_json  = excluded.labels_json,
        author       = excluded.author,
        html_url     = excluded.html_url,
-       updated_at   = excluded.updated_at`,
+       updated_at   = excluded.updated_at,
+       comments     = excluded.comments`,
   ).run(
     row.repo_id,
     row.number,
@@ -137,6 +162,7 @@ export function upsertIssue(db: DatabaseSync, row: IssueUpsert): void {
     row.html_url,
     row.created_at,
     row.updated_at,
+    row.comments,
   );
 }
 

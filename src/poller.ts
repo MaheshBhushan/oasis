@@ -4,6 +4,7 @@ import { loadConfig, type Config } from "./config.ts";
 import {
   getIssue,
   getLinks,
+  setHumanComments,
   listRepos,
   openDb,
   queueEvent,
@@ -14,6 +15,7 @@ import {
 import { diffIssue, touchesState } from "./diff.ts";
 import { emitIssueEvents, emitLinkEvents, sweepStale } from "./events.ts";
 import {
+  countHumanComments,
   isPullRequest,
   labelNames,
   latestRelease,
@@ -73,12 +75,26 @@ export async function pollRepo(
       html_url: raw.html_url,
       created_at: raw.created_at,
       updated_at: raw.updated_at,
+      comments: raw.comments ?? 0,
     });
 
     if (!maxUpdated || raw.updated_at > maxUpdated) maxUpdated = raw.updated_at;
     if (diffs.length === 0) continue;
     changed++;
     if (silent) continue;
+
+    // Read the thread only when there is something to read, and only for
+    // issues that actually changed -- one extra call per changed issue.
+    if ((raw.comments ?? 0) > 0) {
+      setHumanComments(
+        db,
+        repo.id,
+        raw.number,
+        await countHumanComments(gh, repo.owner, repo.name, raw.number),
+      );
+    } else {
+      setHumanComments(db, repo.id, raw.number, 0);
+    }
 
     emitIssueEvents(db, repo.id, raw.number, diffs);
 

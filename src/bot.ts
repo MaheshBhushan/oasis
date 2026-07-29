@@ -30,7 +30,7 @@ import {
   repoExists,
 } from "./github.ts";
 import { checkRelease } from "./poller.ts";
-import { issueEmbed, prLine, recentIssuesEmbed } from "./render.ts";
+import { contention, issueEmbed, prLine, recentIssuesEmbed } from "./render.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { splitSlug } from "./slug.ts";
 
@@ -122,6 +122,7 @@ async function onWatch(i: ChatInputCommandInteraction, db: DatabaseSync, cfg: Co
       html_url: raw.html_url,
       created_at: raw.created_at,
       updated_at: raw.updated_at,
+      comments: raw.comments ?? 0,
     });
   }
 
@@ -147,13 +148,12 @@ async function onStatus(i: ChatInputCommandInteraction, db: DatabaseSync) {
       `${repos.get(r.repo_id) ?? "?"}#${r.number}`.padEnd(28).slice(0, 28),
       `${days}d`.padStart(5),
       (r.state === "open" ? "open" : (r.state_reason ?? "closed")).padEnd(12),
-      (links.length ? `PR #${links[0]!.pr_number}` : "—").padEnd(9),
-      r.claimed_by ?? "—",
+      contention(r, links).slice(0, 34),
     ].join("  ");
   });
 
   return i.editReply(
-    `\`\`\`\n${"issue".padEnd(28)}  ${"age".padStart(5)}  ${"state".padEnd(12)}  ${"pr".padEnd(9)}  owner\n${table.join("\n")}\n\`\`\``,
+    `\`\`\`\n${"issue".padEnd(28)}  ${"age".padStart(5)}  ${"state".padEnd(12)}  status\n${table.join("\n")}\n\`\`\``,
   );
 }
 

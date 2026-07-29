@@ -37,6 +37,8 @@ export interface IssueRow {
   html_url: string;
   created_at: string;
   updated_at: string;
+  comments: number;
+  human_comments: number | null;
   message_id: string | null;
   claimed_by: string | null;
   claimed_at: string | null;
@@ -71,7 +73,11 @@ export interface EventRow {
 /** Shape written by the poller; `id` and timestamps are assigned by SQLite. */
 export type IssueUpsert = Omit<
   IssueRow,
-  "message_id" | "claimed_by" | "claimed_at" | "stale_notified_at"
+  | "message_id"
+  | "claimed_by"
+  | "claimed_at"
+  | "stale_notified_at"
+  | "human_comments"
 >;
 
 export type LinkUpsert = Pick<

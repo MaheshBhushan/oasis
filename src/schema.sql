@@ -32,6 +32,11 @@ CREATE TABLE IF NOT EXISTS issues (
   -- Set by /claim (or, later, an external bug-fix pipeline) before any PR exists.
   claimed_by   TEXT,
   claimed_at   TEXT,
+  -- Total comments as reported by the list endpoint (free, includes bots).
+  comments     INTEGER NOT NULL DEFAULT 0,
+  -- Comments from real people, resolved by fetching the thread. NULL = not
+  -- looked at yet; 0 means checked and genuinely nobody has replied.
+  human_comments INTEGER,
   -- Guard so the stale sweep emits at most one event per quiet period.
   stale_notified_at TEXT,
   PRIMARY KEY (repo_id, number)

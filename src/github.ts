@@ -22,8 +22,41 @@ export interface RawIssue {
   html_url: string;
   created_at: string;
   updated_at: string;
+  /** Total comments including bots. Free — the list endpoint already sends it. */
+  comments?: number;
   /** Present iff this "issue" is really a PR. The list endpoint returns both. */
   pull_request?: unknown;
+}
+
+/**
+ * Count comments written by actual people.
+ *
+ * Bot chatter is the noise this is meant to see through: triage bots, stale
+ * bots and CI all comment without anyone having looked at the issue. Two
+ * signals, because neither alone is reliable — `user.type` is authoritative for
+ * GitHub Apps, and the `[bot]` login suffix catches the rest.
+ */
+export async function countHumanComments(
+  gh: Client,
+  owner: string,
+  repo: string,
+  issue: number,
+): Promise<number> {
+  try {
+    const comments = (await gh.paginate(gh.issues.listComments, {
+      owner,
+      repo,
+      issue_number: issue,
+      per_page: 100,
+    })) as unknown as Array<{ user?: { login?: string; type?: string } | null }>;
+
+    return comments.filter((c) => {
+      const login = c.user?.login ?? "";
+      return c.user?.type !== "Bot" && !login.endsWith("[bot]");
+    }).length;
+  } catch {
+    return 0;
+  }
 }
 
 export function makeClient(token: string) {

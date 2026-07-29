@@ -15,6 +15,7 @@ import { diffIssue, touchesState } from "./diff.ts";
 import { emitIssueEvents, emitLinkEvents, sweepStale } from "./events.ts";
 import { parseClosingRefs, resolveLinks } from "./links.ts";
 import { drain } from "./delivery.ts";
+import { contention } from "./render.ts";
 import { splitSlug } from "./slug.ts";
 import { isPullRequest, type RawIssue } from "./github.ts";
 import type { Config } from "./config.ts";
@@ -49,6 +50,8 @@ function stored(over: Partial<IssueRow> = {}): IssueRow {
     html_url: "https://example.test/1",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+    comments: 0,
+    human_comments: null,
     message_id: null,
     claimed_by: null,
     claimed_at: null,
@@ -142,6 +145,7 @@ describe("event emission", () => {
       html_url: "u",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-02T00:00:00Z",
+      comments: 0,
     });
     return { db, repo };
   };
@@ -227,6 +231,7 @@ describe("event emission", () => {
       html_url: "u",
       created_at: "2025-01-01T00:00:00Z",
       updated_at: "2025-01-01T00:00:00Z",
+      comments: 0,
     });
     assert.equal(sweepStale(db, 30), 1);
     assert.equal(sweepStale(db, 30), 0);
@@ -280,6 +285,7 @@ describe("delivery", () => {
         html_url: `https://example.test/${i}`,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-02T00:00:00Z",
+        comments: 0,
       });
       db.prepare(
         "INSERT INTO events (repo_id, issue_number, type) VALUES (?, ?, ?)",
@@ -428,6 +434,89 @@ describe("body-regex fallback", () => {
     };
     const links = await resolveLinks(gh as never, db, repoId, "o", "r", 1, "me");
     assert.equal(links.length, 0);
+  });
+});
+
+describe("contention status", () => {
+  const L = (over: Partial<LinkRow> = {}): LinkRow => ({
+    id: 1,
+    repo_id: 1,
+    issue_number: 1,
+    pr_number: 7,
+    kind: "connected",
+    pr_state: "open",
+    draft: 0,
+    merged: 0,
+    author: "rando",
+    attribution: "external",
+    active: 1,
+    discovered_at: "",
+    ...over,
+  });
+
+  test("nothing on it at all reads as untouched", () => {
+    assert.equal(contention(stored(), []), "untouched");
+  });
+
+  test("human replies are counted", () => {
+    assert.equal(
+      contention(stored({ comments: 3, human_comments: 3 }), []),
+      "3 replies",
+    );
+    assert.equal(
+      contention(stored({ comments: 1, human_comments: 1 }), []),
+      "1 reply",
+    );
+  });
+
+  test("a thread of pure bot noise is not contested", () => {
+    // 4 comments, none from a person: still free to pick up.
+    assert.equal(
+      contention(stored({ comments: 4, human_comments: 0 }), []),
+      "bots only",
+    );
+  });
+
+  test("an open PR outranks the comment count", () => {
+    assert.equal(
+      contention(stored({ comments: 2, human_comments: 2 }), [L()]),
+      "PR #7 open · rando · 2 replies",
+    );
+  });
+
+  test("your own PR is marked as yours", () => {
+    assert.ok(
+      contention(stored(), [L({ attribution: "mine", author: "MaheshBhushan" })])
+        .startsWith("PR #7 open · yours"),
+    );
+  });
+
+  test("a merged PR reads as fixed", () => {
+    assert.ok(
+      contention(stored(), [L({ merged: 1, pr_state: "closed" })]).startsWith(
+        "fixed by PR #7",
+      ),
+    );
+  });
+
+  test("a closed unmerged PR does not read as fixed", () => {
+    const s = contention(stored(), [L({ merged: 0, pr_state: "closed" })]);
+    assert.ok(s.includes("closed unmerged"));
+    assert.ok(!s.includes("fixed"));
+  });
+
+  test("unread threads fall back to the raw count", () => {
+    assert.equal(
+      contention(stored({ comments: 5, human_comments: null }), []),
+      "5 comments",
+    );
+  });
+
+  test("a claim is appended, not substituted", () => {
+    assert.equal(
+      contention(stored({ claimed_by: "MaheshBhushan" }), []),
+      "no replies · claimed by MaheshBhushan",
+    );
   });
 });
 

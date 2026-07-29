@@ -17,6 +17,49 @@ export function issueColor(issue: IssueRow): number {
 const age = (iso: string) =>
   `${Math.floor((Date.now() - Date.parse(iso)) / 86_400_000)}d`;
 
+/**
+ * Is anyone already on this?
+ *
+ * The question that decides whether an issue is worth picking up, ranked by how
+ * strongly it says "taken". A PR beats discussion; discussion beats silence.
+ * Bot comments are excluded upstream, so "nobody has replied" means no human
+ * replied — a triage bot leaving a template does not make an issue contested.
+ */
+export function contention(issue: IssueRow, links: LinkRow[]): string {
+  const parts: string[] = [];
+
+  const merged = links.find((l) => l.merged);
+  const open = links.find((l) => !l.merged && l.pr_state !== "closed");
+  if (merged) parts.push(`fixed by PR #${merged.pr_number}`);
+  else if (open) {
+    parts.push(
+      `PR #${open.pr_number} open${open.draft ? " (draft)" : ""} · ${
+        open.attribution === "mine" ? "yours" : (open.author ?? "someone")
+      }`,
+    );
+  } else if (links.length) parts.push(`PR #${links[0]!.pr_number} closed unmerged`);
+
+  if (issue.comments === 0) {
+    // Zero total comments needs no thread read to be certain about.
+    parts.push("no replies");
+  } else if (issue.human_comments === null) {
+    parts.push(`${issue.comments} comments`); // thread not read yet
+  } else if (issue.human_comments > 0) {
+    parts.push(`${issue.human_comments} ${issue.human_comments === 1 ? "reply" : "replies"}`);
+  } else {
+    // Comments exist but every one of them is a bot.
+    parts.push("bots only");
+  }
+
+  if (issue.claimed_by) parts.push(`claimed by ${issue.claimed_by}`);
+
+  // Nothing attached and nobody talking: the one you want.
+  if (!links.length && !issue.claimed_by && !issue.human_comments && !issue.comments) {
+    return "untouched";
+  }
+  return parts.join(" · ");
+}
+
 /** One embed per issue. Later events edit this rather than posting again. */
 export function issueEmbed(
   repo: RepoRow,
@@ -43,11 +86,7 @@ export function issueEmbed(
         inline: true,
       },
       { name: "Age", value: age(issue.created_at), inline: true },
-      {
-        name: "Owner",
-        value: issue.claimed_by ? `claimed by ${issue.claimed_by}` : "unclaimed",
-        inline: true,
-      },
+      { name: "Status", value: contention(issue, links), inline: true },
     );
 
   if (labels.length) {
