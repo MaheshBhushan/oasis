@@ -25,6 +25,7 @@ import { makeClient, repoExists } from "./github.ts";
 import { pollRepo } from "./poller.ts";
 import { issueEmbed, prLine } from "./render.ts";
 import type { DatabaseSync } from "node:sqlite";
+import { splitSlug } from "./slug.ts";
 
 export const commands = [
   new SlashCommandBuilder()
@@ -63,11 +64,6 @@ export const commands = [
     ),
 ].map((c) => c.toJSON());
 
-function splitSlug(slug: string): [string, string] | null {
-  const m = /^([\w.-]+)\/([\w.-]+)$/.exec(slug.trim());
-  return m ? [m[1]!, m[2]!] : null;
-}
-
 /** Resolve the repo for commands where it is optional; unambiguous if only one. */
 function resolveRepo(db: DatabaseSync, slug: string | null) {
   if (slug) {
@@ -81,7 +77,13 @@ function resolveRepo(db: DatabaseSync, slug: string | null) {
 async function onWatch(i: ChatInputCommandInteraction, db: DatabaseSync, cfg: Config) {
   const slug = i.options.getString("repo", true);
   const parts = splitSlug(slug);
-  if (!parts) return i.editReply("Expected `owner/repo`.");
+  if (!parts) {
+    return i.editReply(
+      `Couldn't read \`${slug}\` as a repository.\n` +
+        "Try `Textualize/rich`, or paste the GitHub URL. " +
+        "The owner is the repo's owner — you don't need to own it.",
+    );
+  }
 
   const gh = makeClient(cfg.githubToken);
   if (!(await repoExists(gh, parts[0], parts[1]))) {

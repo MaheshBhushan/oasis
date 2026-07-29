@@ -15,6 +15,7 @@ import { diffIssue, touchesState } from "./diff.ts";
 import { emitIssueEvents, emitLinkEvents, sweepStale } from "./events.ts";
 import { parseClosingRefs, resolveLinks } from "./links.ts";
 import { drain } from "./delivery.ts";
+import { splitSlug } from "./slug.ts";
 import { isPullRequest, type RawIssue } from "./github.ts";
 import type { Config } from "./config.ts";
 import type { IssueRow, LinkRow } from "./types.ts";
@@ -428,6 +429,33 @@ describe("body-regex fallback", () => {
     const links = await resolveLinks(gh as never, db, repoId, "o", "r", 1, "me");
     assert.equal(links.length, 0);
   });
+});
+
+describe("repo slug parsing", () => {
+  const cases: Array<[string, [string, string] | null]> = [
+    ["Textualize/rich", ["Textualize", "rich"]],
+    ["  Textualize/rich  ", ["Textualize", "rich"]],
+    ["https://github.com/Textualize/rich", ["Textualize", "rich"]],
+    ["http://www.github.com/Textualize/rich", ["Textualize", "rich"]],
+    ["github.com/Textualize/rich", ["Textualize", "rich"]],
+    ["https://github.com/Textualize/rich.git", ["Textualize", "rich"]],
+    ["git@github.com:Textualize/rich.git", ["Textualize", "rich"]],
+    ["<https://github.com/Textualize/rich>", ["Textualize", "rich"]],
+    ["https://github.com/Textualize/rich/", ["Textualize", "rich"]],
+    // deep links still identify the repo
+    ["https://github.com/Textualize/rich/issues/3299", ["Textualize", "rich"]],
+    ["https://github.com/Textualize/rich/pull/4155", ["Textualize", "rich"]],
+    // genuinely unusable
+    ["rich", null],
+    ["", null],
+    ["not a repo at all", null],
+  ];
+
+  for (const [input, expected] of cases) {
+    test(`${input || "(empty)"} -> ${expected ? expected.join("/") : "null"}`, () => {
+      assert.deepEqual(splitSlug(input), expected);
+    });
+  }
 });
 
 describe("link storage", () => {
