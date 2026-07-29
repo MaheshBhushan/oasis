@@ -8,6 +8,12 @@ export interface Config {
   /** Label changes only produce events for labels in this set. */
   watchedLabels: string[];
   staleDays: number;
+  /**
+   * How far back /watch seeds history. Full history on a large repo is tens of
+   * thousands of items and hours of pagination, and dormant issues are not what
+   * you race anyone for — recent activity is.
+   */
+  backfillDays: number;
   /** Batch into a single digest embed once a cycle exceeds this many events. */
   digestThreshold: number;
   /** Poller backs off (doubling its interval) below this many remaining calls. */
@@ -34,6 +40,7 @@ export function loadConfig(): Config {
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean),
     staleDays: Number(process.env.RADAR_STALE_DAYS ?? 30),
+    backfillDays: Number(process.env.RADAR_BACKFILL_DAYS ?? 90),
     digestThreshold: Number(process.env.RADAR_DIGEST_THRESHOLD ?? 5),
     rateLimitFloor: Number(process.env.RADAR_RATE_FLOOR ?? 500),
     pingTarget: process.env.RADAR_PING

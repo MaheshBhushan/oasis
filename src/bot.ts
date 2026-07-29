@@ -19,6 +19,7 @@ import {
   listRepos,
   openDb,
   removeRepo,
+  setSyncState,
 } from "./db.ts";
 import { drain } from "./delivery.ts";
 import { makeClient, repoExists } from "./github.ts";
@@ -92,12 +93,41 @@ async function onWatch(i: ChatInputCommandInteraction, db: DatabaseSync, cfg: Co
   if (getRepo(db, parts[0], parts[1])) return i.editReply(`Already watching \`${slug}\`.`);
 
   const repo = addRepo(db, parts[0], parts[1]);
-  // Silent: seed rows and the cursor, emit nothing. A busy repo would otherwise
-  // dump hundreds of embeds into the channel on registration.
-  const report = await pollRepo(gh, db, cfg, repo, true);
-  return i.editReply(
-    `Watching \`${slug}\` — backfilled ${report.scanned} issues silently. Updates from here on.`,
+
+  // Seed the cursor to a bounded window. openclaw/openclaw alone has ~6k *open*
+  // issues and PRs; full history is hundreds of pages and well past Discord's
+  // 15 minute interaction deadline, which is exactly how this hung the first
+  // time. Dormant issues are not what you race anyone for.
+  const since = new Date(
+    Date.now() - cfg.backfillDays * 86_400_000,
+  ).toISOString();
+  setSyncState(db, repo.id, since, null);
+
+  // Answer now. The backfill runs detached and reports into the channel when
+  // it lands -- an interaction token cannot be held open for minutes.
+  await i.editReply(
+    `Watching \`${parts[0]}/${parts[1]}\` — seeding the last ${cfg.backfillDays} days in the background. ` +
+      "Nothing will be announced for the backfill itself.",
   );
+
+  void (async () => {
+    const started = Date.now();
+    try {
+      const report = await pollRepo(gh, db, cfg, { ...repo, last_sync: since }, true);
+      const secs = Math.round((Date.now() - started) / 1000);
+      await i.followUp(
+        `\`${parts[0]}/${parts[1]}\`: seeded ${report.scanned} issues in ${secs}s. Watching from here.`,
+      );
+    } catch (e) {
+      console.error(`[watch] backfill of ${slug} failed:`, e);
+      // Leaving a half-seeded row behind would make the retry answer
+      // "Already watching" and never backfill at all.
+      removeRepo(db, parts[0], parts[1]);
+      await i
+        .followUp(`Backfill of \`${slug}\` failed, so it is not being watched. Try again.`)
+        .catch(() => {});
+    }
+  })();
 }
 
 async function onStatus(i: ChatInputCommandInteraction, db: DatabaseSync) {
