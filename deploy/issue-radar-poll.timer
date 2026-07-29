@@ -1,10 +1,18 @@
 [Unit]
-Description=Run the issue-radar poller every 10 minutes
+Description=Run the issue-radar poller every minute
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=10min
-RandomizedDelaySec=90
+OnBootSec=30s
+# OnUnitActiveSec measures from when the last run *finished*, so a cycle that
+# overruns a minute cannot stack up behind itself. systemd also refuses to
+# retrigger a oneshot that is still running.
+OnUnitActiveSec=1min
+# Default accuracy is 1 minute, which on a 1-minute period is enough slop to
+# make the real cadence closer to two. Tighten it so the interval is honest.
+AccuracySec=5s
+# No randomised delay: at this period it would be a large fraction of the
+# interval, and there is no fleet whose load needs spreading.
+RandomizedDelaySec=0
 Persistent=true
 
 [Install]
