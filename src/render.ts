@@ -14,8 +14,29 @@ export function issueColor(issue: IssueRow): number {
   return issue.state_reason === "not_planned" ? COLOR.not_planned : COLOR.completed;
 }
 
-const age = (iso: string) =>
-  `${Math.floor((Date.now() - Date.parse(iso)) / 86_400_000)}d`;
+/**
+ * Compact age. Days alone hid the thing that matters most for getting there
+ * first: an issue posted 20 minutes ago and one posted 20 hours ago both read
+ * as "0d". Resolution scales down as age goes up, since minutes stop mattering
+ * once something is a week old.
+ */
+export function age(iso: string, now = Date.now()): string {
+  const mins = Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000));
+  if (mins < 60) return `${mins}m`;
+
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) {
+    const rem = mins % 60;
+    return rem ? `${hours}h ${rem}m` : `${hours}h`;
+  }
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) {
+    const rem = hours % 24;
+    return rem ? `${days}d ${rem}h` : `${days}d`;
+  }
+  return `${days}d`;
+}
 
 /**
  * Is anyone already on this?
@@ -178,13 +199,17 @@ export function releaseEmbed(repo: RepoRow, ev: EventRow): EmbedBuilder {
 /** Compact list of an issue for the /watch summary. */
 export function recentIssuesEmbed(
   repo: RepoRow,
-  issues: Array<{ number: number; title: string; state: string; html_url: string; updated_at: string }>,
+  issues: Array<{
+    number: number;
+    title: string;
+    state: string;
+    html_url: string;
+    created_at: string;
+  }>,
 ): EmbedBuilder {
   const lines = issues.map((i) => {
-    const days = Math.floor((Date.now() - Date.parse(i.updated_at)) / 86_400_000);
-    const when = days === 0 ? "today" : `${days}d ago`;
     const mark = i.state === "closed" ? "~~" : "";
-    return `${mark}[#${i.number} ${i.title.slice(0, 70)}](${i.html_url})${mark} · ${when}`;
+    return `${mark}[#${i.number} ${i.title.slice(0, 70)}](${i.html_url})${mark} · ${age(i.created_at)} old`;
   });
   return new EmbedBuilder()
     .setColor(COLOR.open)

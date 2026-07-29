@@ -30,7 +30,13 @@ import {
   repoExists,
 } from "./github.ts";
 import { checkRelease } from "./poller.ts";
-import { contention, issueEmbed, prLine, recentIssuesEmbed } from "./render.ts";
+import {
+  age,
+  contention,
+  issueEmbed,
+  prLine,
+  recentIssuesEmbed,
+} from "./render.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { splitSlug } from "./slug.ts";
 
@@ -143,17 +149,16 @@ async function onStatus(i: ChatInputCommandInteraction, db: DatabaseSync) {
 
   const table = rows.map((r) => {
     const links = getLinks(db, r.repo_id, r.number);
-    const days = Math.floor((Date.now() - Date.parse(r.created_at)) / 86_400_000);
     return [
       `${repos.get(r.repo_id) ?? "?"}#${r.number}`.padEnd(28).slice(0, 28),
-      `${days}d`.padStart(5),
+      age(r.created_at).padStart(8),
       (r.state === "open" ? "open" : (r.state_reason ?? "closed")).padEnd(12),
       contention(r, links).slice(0, 34),
     ].join("  ");
   });
 
   return i.editReply(
-    `\`\`\`\n${"issue".padEnd(28)}  ${"age".padStart(5)}  ${"state".padEnd(12)}  status\n${table.join("\n")}\n\`\`\``,
+    `\`\`\`\n${"issue".padEnd(28)}  ${"age".padStart(8)}  ${"state".padEnd(12)}  status\n${table.join("\n")}\n\`\`\``,
   );
 }
 

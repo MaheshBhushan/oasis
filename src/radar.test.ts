@@ -15,7 +15,7 @@ import { diffIssue, touchesState } from "./diff.ts";
 import { emitIssueEvents, emitLinkEvents, sweepStale } from "./events.ts";
 import { parseClosingRefs, resolveLinks } from "./links.ts";
 import { drain } from "./delivery.ts";
-import { contention } from "./render.ts";
+import { age, contention } from "./render.ts";
 import { splitSlug } from "./slug.ts";
 import { isPullRequest, type RawIssue } from "./github.ts";
 import type { Config } from "./config.ts";
@@ -434,6 +434,39 @@ describe("body-regex fallback", () => {
     };
     const links = await resolveLinks(gh as never, db, repoId, "o", "r", 1, "me");
     assert.equal(links.length, 0);
+  });
+});
+
+describe("age formatting", () => {
+  const NOW = Date.parse("2026-07-29T12:00:00Z");
+  const ago = (ms: number) => age(new Date(NOW - ms).toISOString(), NOW);
+  const MIN = 60_000;
+  const HOUR = 60 * MIN;
+  const DAY = 24 * HOUR;
+
+  test("minutes below an hour", () => {
+    assert.equal(ago(0), "0m");
+    assert.equal(ago(20 * MIN), "20m");
+    assert.equal(ago(59 * MIN), "59m");
+  });
+
+  test("hours and minutes below a day", () => {
+    assert.equal(ago(HOUR), "1h");
+    assert.equal(ago(3 * HOUR + 20 * MIN), "3h 20m");
+    assert.equal(ago(23 * HOUR + 59 * MIN), "23h 59m");
+  });
+
+  test("days and hours in the first week", () => {
+    assert.equal(ago(DAY), "1d");
+    assert.equal(ago(2 * DAY + 5 * HOUR), "2d 5h");
+  });
+
+  test("days alone once minutes stop mattering", () => {
+    assert.equal(ago(30 * DAY + 7 * HOUR), "30d");
+  });
+
+  test("a future timestamp clamps instead of going negative", () => {
+    assert.equal(ago(-5 * MIN), "0m");
   });
 });
 
