@@ -4,7 +4,8 @@ export type LinkKind =
   | "connected"
   | "cross_referenced"
   | "closing_commit"
-  | "body_regex";
+  | "body_regex"
+  | "comment_ref";
 
 export type EventType =
   | "issue_opened"

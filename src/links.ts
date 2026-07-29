@@ -39,6 +39,8 @@ export async function resolveLinks(
   repo: string,
   issueNumber: number,
   handle: string,
+  /** Numbers cited in the issue's comments; see CommentSummary.mentions. */
+  mentions: number[] = [],
 ): Promise<LinkRow[]> {
   const timeline = await getTimeline(gh, owner, repo, issueNumber);
   const candidates = new Map<number, Candidate>();
@@ -89,6 +91,11 @@ export async function resolveLinks(
     }
   }
 
+  // Numbers people cited in the thread. Each is only a candidate -- getPull
+  // below 404s on anything that is not a PR in this repo, which filters out
+  // references to sibling issues without costing us a separate check.
+  for (const n of mentions) remember(n, "comment_ref");
+
   // Fallback: some repos close issues from PRs that were never formally linked
   // and whose cross-reference never fired. Only pay for the search when the
   // timeline gave us nothing at all.
@@ -134,6 +141,7 @@ const RANKS: Record<LinkKind, number> = {
   closing_commit: 2,
   cross_referenced: 1,
   body_regex: 0,
+  comment_ref: 0,
 };
 const rank = (k: LinkKind) => RANKS[k];
 

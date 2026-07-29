@@ -15,13 +15,13 @@ import {
 import { diffIssue, touchesState } from "./diff.ts";
 import { emitIssueEvents, emitLinkEvents, sweepStale } from "./events.ts";
 import {
-  countHumanComments,
   isPullRequest,
   labelNames,
   latestRelease,
   listIssues,
   makeClient,
   NOT_MODIFIED,
+  readComments,
   rateRemaining,
   type Client,
   type RawIssue,
@@ -92,14 +92,13 @@ export async function pollRepo(
     if (diffs.length) changed++;
     if (silent || !moved) continue;
 
-    // Read the thread only when there is something to read.
+    // Read the thread only when there is something to read. This also yields
+    // any PR numbers people cited in comments, which the timeline never shows.
+    let mentions: number[] = [];
     if ((raw.comments ?? 0) > 0) {
-      setHumanComments(
-        db,
-        repo.id,
-        raw.number,
-        await countHumanComments(gh, repo.owner, repo.name, raw.number),
-      );
+      const summary = await readComments(gh, repo.owner, repo.name, raw.number);
+      mentions = summary.mentions;
+      setHumanComments(db, repo.id, raw.number, summary.human);
     } else {
       setHumanComments(db, repo.id, raw.number, 0);
     }
@@ -133,6 +132,7 @@ export async function pollRepo(
         repo.name,
         raw.number,
         cfg.githubHandle,
+        mentions,
       );
       emitLinkEvents(db, repo.id, getIssue(db, repo.id, raw.number), before, after);
     }

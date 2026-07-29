@@ -559,6 +559,72 @@ describe("contention status", () => {
   });
 });
 
+describe("comment-mentioned PRs", () => {
+  /**
+   * GitHub records a cross-reference on the target of a mention, not the
+   * source, so an issue whose thread says "PR #900 fixes this" has a timeline
+   * containing only a comment. These cover the path that reads the thread.
+   */
+  function fakeGh(pulls: Record<number, boolean>) {
+    const asked: number[] = [];
+    return {
+      gh: {
+        paginate: async () => [],
+        issues: { listEventsForTimeline: {} },
+        pulls: {
+          get: async ({ pull_number }: { pull_number: number }) => {
+            asked.push(pull_number);
+            if (!pulls[pull_number]) {
+              throw Object.assign(new Error("Not Found"), { status: 404 });
+            }
+            return {
+              data: {
+                number: pull_number,
+                state: "open",
+                draft: false,
+                merged_at: null,
+                user: { login: "rando" },
+              },
+            };
+          },
+        },
+        search: { issuesAndPullRequests: async () => ({ data: { items: [] } }) },
+      },
+      asked,
+    };
+  }
+
+  test("a PR cited only in a comment becomes a link", async () => {
+    const db = openDb(":memory:");
+    const repo = addRepo(db, "o", "r");
+    const { gh } = fakeGh({ 900: true });
+    const links = await resolveLinks(
+      gh as never, db, repo.id, "o", "r", 1, "me", [900],
+    );
+    assert.deepEqual(links.map((l) => l.pr_number), [900]);
+    assert.equal(links[0]!.kind, "comment_ref");
+  });
+
+  test("a cited issue number is not mistaken for a PR", async () => {
+    const db = openDb(":memory:");
+    const repo = addRepo(db, "o", "r");
+    // 7533 is an issue: the PR lookup 404s and it must not be stored.
+    const { gh } = fakeGh({ 900: true });
+    const links = await resolveLinks(
+      gh as never, db, repo.id, "o", "r", 1, "me", [7533, 900],
+    );
+    assert.deepEqual(links.map((l) => l.pr_number), [900]);
+  });
+
+  test("the issue's own number is never a candidate", async () => {
+    const db = openDb(":memory:");
+    const repo = addRepo(db, "o", "r");
+    const { gh, asked } = fakeGh({ 1: true });
+    await resolveLinks(gh as never, db, repo.id, "o", "r", 1, "me", [1]);
+    assert.equal(asked.includes(1), false);
+  });
+});
+
 describe("digest grouping", () => {
   const row = (
     number: number,

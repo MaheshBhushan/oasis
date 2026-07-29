@@ -53,8 +53,11 @@ export function contention(issue: IssueRow, links: LinkRow[]): string {
   const open = links.find((l) => !l.merged && l.pr_state !== "closed");
   if (merged) parts.push(`fixed by PR #${merged.pr_number}`);
   else if (open) {
+    // A comment mention is someone saying a PR is related, not GitHub asserting
+    // a link, so it is reported as weaker evidence rather than as a fact.
+    const how = open.kind === "comment_ref" ? "mentioned in thread" : "open";
     parts.push(
-      `PR #${open.pr_number} open${open.draft ? " (draft)" : ""} · ${
+      `PR #${open.pr_number} ${how}${open.draft ? " (draft)" : ""} · ${
         open.attribution === "mine" ? "yours" : (open.author ?? "someone")
       }`,
     );
@@ -134,7 +137,8 @@ export function prLine(l: LinkRow): string {
         ? "draft"
         : "open";
   const who = l.attribution === "mine" ? "you" : (l.author ?? "?");
-  return `#${l.pr_number} — ${status} · ${who}`;
+  const via = l.kind === "comment_ref" ? " · via comment" : "";
+  return `#${l.pr_number} — ${status} · ${who}${via}`;
 }
 
 export interface DigestRow {

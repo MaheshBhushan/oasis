@@ -36,26 +36,61 @@ export interface RawIssue {
  * signals, because neither alone is reliable — `user.type` is authoritative for
  * GitHub Apps, and the `[bot]` login suffix catches the rest.
  */
-export async function countHumanComments(
+export interface CommentSummary {
+  /** Comments written by people, not bots. */
+  human: number;
+  /**
+   * Numbers referenced in comment bodies.
+   *
+   * These matter because GitHub records a cross-reference on the *target* of a
+   * mention, not the source: someone commenting "PR #123 fixes this" puts the
+   * event on #123's timeline, leaving the issue's own timeline showing nothing
+   * but a comment. Reading the issue timeline alone misses that entirely, which
+   * is how issues with a PR discussed in the thread kept reading as untouched.
+   */
+  mentions: number[];
+}
+
+const MENTION_RE = /#(\d{1,7})\b/g;
+/** Cap the follow-up lookups; a long argument can cite dozens of numbers. */
+const MAX_MENTIONS = 6;
+
+export async function readComments(
   gh: Client,
   owner: string,
   repo: string,
   issue: number,
-): Promise<number> {
+): Promise<CommentSummary> {
   try {
     const comments = (await gh.paginate(gh.issues.listComments, {
       owner,
       repo,
       issue_number: issue,
       per_page: 100,
-    })) as unknown as Array<{ user?: { login?: string; type?: string } | null }>;
+    })) as unknown as Array<{
+      body?: string | null;
+      user?: { login?: string; type?: string } | null;
+    }>;
 
-    return comments.filter((c) => {
-      const login = c.user?.login ?? "";
-      return c.user?.type !== "Bot" && !login.endsWith("[bot]");
-    }).length;
+    const isBot = (c: (typeof comments)[number]) =>
+      c.user?.type === "Bot" || (c.user?.login ?? "").endsWith("[bot]");
+
+    const mentions = new Set<number>();
+    for (const c of comments) {
+      // Bot comments cite tracking numbers constantly; only trust people.
+      if (isBot(c)) continue;
+      for (const m of (c.body ?? "").matchAll(MENTION_RE)) {
+        const n = Number(m[1]);
+        if (n && n !== issue) mentions.add(n);
+      }
+    }
+
+    return {
+      human: comments.filter((c) => !isBot(c)).length,
+      mentions: [...mentions].slice(0, MAX_MENTIONS),
+    };
   } catch {
-    return 0;
+    return { human: 0, mentions: [] };
   }
 }
 
