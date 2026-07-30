@@ -97,6 +97,7 @@ Issues whose state moved get their timeline read for `connected`/`disconnected` 
 | `RADAR_DB` | `radar.db` | Use an absolute path; both processes open it |
 | `RADAR_LABELS` | `bug,good first issue` | Label changes outside this set are ignored |
 | `RADAR_STALE_DAYS` | `30` | |
+| `RADAR_MAX_ISSUE_AGE_HOURS` | `24` | Older issues are never announced as new, only as transitions |
 | `RADAR_DIGEST_THRESHOLD` | `5` | |
 | `RADAR_RATE_FLOOR` | `500` | Poller pauses below this many remaining calls |
 | `RADAR_PING` | `@here` | Discord user id for actionable alerts |

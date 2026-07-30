@@ -30,6 +30,11 @@ export interface Config {
   onlyUnclaimed: boolean;
   /** Max issue timelines resolved per repo per cycle. Bounds quota spend. */
   linkBudget: number;
+  /**
+   * An issue older than this is never announced as new, however recently we
+   * first saw it. Transitions on it (closed, reopened) still are.
+   */
+  maxIssueAgeHours: number;
 }
 
 function req(name: string): string {
@@ -59,5 +64,6 @@ export function loadConfig(): Config {
     onlyLabelled: process.env.RADAR_ONLY_LABELLED === "true",
     onlyUnclaimed: process.env.RADAR_ONLY_UNCLAIMED === "true",
     linkBudget: Number(process.env.RADAR_LINK_BUDGET ?? 60),
+    maxIssueAgeHours: Number(process.env.RADAR_MAX_ISSUE_AGE_HOURS ?? 24),
   };
 }

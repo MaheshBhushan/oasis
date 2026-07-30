@@ -12,7 +12,7 @@ import {
   setSyncState,
   upsertIssue,
 } from "./db.ts";
-import { diffIssue, touchesState } from "./diff.ts";
+import { announceable, diffIssue, touchesState } from "./diff.ts";
 import { emitIssueEvents, emitLinkEvents, sweepStale } from "./events.ts";
 import {
   isPullRequest,
@@ -117,7 +117,12 @@ export async function pollRepo(
       announce = false;
     }
 
-    if (announce && diffs.length) emitIssueEvents(db, repo.id, raw.number, diffs);
+    // Age-gate last, so it narrows what is *said* without affecting the stored
+    // row, the link resolution below, or the cursor.
+    const worthSaying = announceable(diffs, raw.created_at, cfg.maxIssueAgeHours);
+    if (announce && worthSaying.length) {
+      emitIssueEvents(db, repo.id, raw.number, worthSaying);
+    }
 
     // Resolve links on any real activity, not just state changes. Budgeted so
     // one enormous cycle cannot exhaust the hourly quota on timeline calls.

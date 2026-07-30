@@ -51,3 +51,28 @@ export function diffIssue(
 /** True when this diff warrants re-resolving issue<->PR links. */
 export const touchesState = (d: Diff) =>
   d.kind === "new" || d.kind === "closed" || d.kind === "reopened";
+
+/**
+ * Drop "this is new" claims about issues that plainly are not.
+ *
+ * `new` above means *newly seen*, not *newly created* — there is no stored row.
+ * Those are not the same thing. The `since` cursor returns any issue whose
+ * updated_at moved, so a triage bot commenting on a year-old thread hands us an
+ * issue we have never stored, and we announced it as freshly opened. On
+ * openclaw that was 332 of 358 announcements in forty minutes: a wall of
+ * two-month-old issues, none of them an opportunity.
+ *
+ * Only the "look at this, it just appeared" diffs are age-gated. Anything
+ * describing a *transition* — closed, reopened, closed-reason amended — is
+ * still worth hearing on an old issue, because the change genuinely happened
+ * just now. PR link events are emitted elsewhere and are untouched by this.
+ */
+export function announceable(
+  diffs: Diff[],
+  createdAt: string,
+  maxAgeHours: number,
+  now = Date.now(),
+): Diff[] {
+  if (now - Date.parse(createdAt) <= maxAgeHours * 3_600_000) return diffs;
+  return diffs.filter((d) => d.kind !== "new" && d.kind !== "labels");
+}

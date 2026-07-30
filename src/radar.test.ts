@@ -11,7 +11,7 @@ import {
   upsertIssue,
   upsertLink,
 } from "./db.ts";
-import { diffIssue, touchesState } from "./diff.ts";
+import { announceable, diffIssue, touchesState, type Diff } from "./diff.ts";
 import { emitIssueEvents, emitLinkEvents, sweepStale } from "./events.ts";
 import { parseClosingRefs, resolveLinks } from "./links.ts";
 import { drain } from "./delivery.ts";
@@ -114,6 +114,46 @@ describe("diff engine", () => {
   test("label churn alone does not trigger link resolution", () => {
     const d = diffIssue(stored(), raw({ labels: [{ name: "bug" }] }), LABELS);
     assert.equal(d.some(touchesState), false);
+  });
+});
+
+describe("announceable", () => {
+  const NOW = Date.parse("2026-07-30T00:00:00Z");
+  const ago = (hours: number) =>
+    new Date(NOW - hours * 3_600_000).toISOString();
+
+  test("a genuinely new issue is announced", () => {
+    const d: Diff[] = [{ kind: "new" }];
+    assert.deepEqual(announceable(d, ago(2), 24, NOW), d);
+  });
+
+  test("first sighting of an old issue is not 'new'", () => {
+    // The bot-comment case: never stored, so diffIssue says new, but it was
+    // opened 57 days ago and is nobody's opportunity.
+    assert.deepEqual(announceable([{ kind: "new" }], ago(57 * 24), 24, NOW), []);
+  });
+
+  test("transitions on an old issue still announce", () => {
+    const d: Diff[] = [{ kind: "closed", reason: "completed" }];
+    assert.deepEqual(announceable(d, ago(57 * 24), 24, NOW), d);
+    assert.deepEqual(announceable([{ kind: "reopened" }], ago(999), 24, NOW), [
+      { kind: "reopened" },
+    ]);
+  });
+
+  test("a closure on an old issue survives even alongside a dropped 'new'", () => {
+    const kept = announceable(
+      [{ kind: "new" }, { kind: "closed", reason: "not_planned" }],
+      ago(500),
+      24,
+      NOW,
+    );
+    assert.deepEqual(kept, [{ kind: "closed", reason: "not_planned" }]);
+  });
+
+  test("the boundary is inclusive", () => {
+    assert.equal(announceable([{ kind: "new" }], ago(24), 24, NOW).length, 1);
+    assert.equal(announceable([{ kind: "new" }], ago(24.1), 24, NOW).length, 0);
   });
 });
 
