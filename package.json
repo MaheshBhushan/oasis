@@ -4,7 +4,7 @@
   "description": "Discord bot that tracks GitHub repos for new issues, linked PRs, race warnings and releases",
   "main": "index.js",
   "scripts": {
-    "test": "node --test src/radar.test.ts",
+    "test": "node --test src/radar.test.ts src/access.test.ts",
     "poll": "node src/poller.ts",
     "bot": "node src/bot.ts",
     "register": "node src/bot.ts --register",

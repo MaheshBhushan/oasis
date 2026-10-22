@@ -9,6 +9,7 @@ import {
   type TextChannel,
 } from "discord.js";
 import { loadConfig, type Config } from "./config.ts";
+import { commandAccessFromEnv, commandRefusal } from "./access.ts";
 import {
   addRepo,
   claimIssue,
@@ -239,8 +240,22 @@ client.once(Events.ClientReady, async (c) => {
   }, 30_000);
 });
 
+const access = commandAccessFromEnv();
+if (access.userIds.size === 0) {
+  console.warn(
+    "[bot] DISCORD_ALLOWED_USER_IDS is not set: every slash command will be refused. " +
+      "Set it to your Discord user id (comma-separated for several users) in .env.",
+  );
+}
+
 client.on(Events.InteractionCreate, async (i) => {
   if (!i.isChatInputCommand()) return;
+  const refusal = commandRefusal(access, { userId: i.user.id, guildId: i.guildId, channelId: i.channelId });
+  if (refusal) {
+    console.warn(`[bot] refused /${i.commandName} from user ${i.user.id} in channel ${i.channelId}: ${refusal}`);
+    await i.reply({ content: "This command is not available here.", ephemeral: true }).catch(() => {});
+    return;
+  }
   await i.deferReply();
   try {
     if (i.commandName === "watch") await onWatch(i, db, cfg);
